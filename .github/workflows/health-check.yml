@@ -1,0 +1,45 @@
+name: System Health Check
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Check API connectivity
+      env:
+        GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+        GETIMG_API_KEY_1: ${{ secrets.GETIMG_API_KEY_1 }}
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        YT_CLIENT_ID_1: ${{ secrets.YT_CLIENT_ID_1 }}
+        YT_CLIENT_SECRET_1: ${{ secrets.YT_CLIENT_SECRET_1 }}
+        YT_REFRESH_TOKEN_1: ${{ secrets.YT_REFRESH_TOKEN_1 }}
+      run: |
+        python -c "
+        import os
+        from config.config import config
+        print('API Keys Status:')
+        print(f'Gemini: {bool(config.GEMINI_API_KEY_1)}')
+        print(f'GetImg: {bool(config.GETIMG_API_KEY_1)}')
+        print(f'YouTube: {bool(config.YOUTUBE_API_KEY)}')
+        print(f'Telegram: {bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)}')
+        print('Configuration validation:', config.validate_secrets())
+        "
