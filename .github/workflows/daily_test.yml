@@ -1,0 +1,99 @@
+name: Daily System Test
+
+on:
+  schedule:
+    # تشغيل كل يوم في الساعة 06:00 UTC (قبل ساعة من بدء العمل)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  test-system:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create minimal environment file
+      run: |
+        cat > .env << EOF
+        # Essential APIs
+        YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+        YT_CHANNEL_ID=${{ secrets.YT_CHANNEL_ID }}
+        
+        # At least one TTS service
+        ELEVEN_API_KEY_1=${{ secrets.ELEVEN_API_KEY_1 }}
+        
+        # At least one content service
+        GEMINI_API_KEY_1=${{ secrets.GEMINI_API_KEY_1 }}
+        
+        # Test settings
+        LOG_LEVEL=INFO
+        TEST_MODE=true
+        GITHUB_ACTIONS=true
+        EOF
+
+    - name: Create directories
+      run: |
+        mkdir -p assets/backgrounds
+        mkdir -p assets/generated/shorts
+        mkdir -p logs
+
+    - name: Run system tests
+      run: |
+        python main.py --test-all
+
+    - name: Generate test short
+      run: |
+        python main.py --test --generate 1
+
+    - name: Check API connections
+      run: |
+        python3 -c "
+import sys
+sys.path.append('.')
+from config.secrets_manager import secrets_manager
+
+print('🔍 Checking available APIs...')
+available_apis = secrets_manager.get_available_apis()
+
+print(f'✅ Available APIs ({len(available_apis)}):')
+for api in available_apis:
+    print(f'  - {api}')
+
+# التحقق من APIs الأساسية
+essential_apis = ['youtube', 'elevenlabs', 'gemini', 'openai', 'groq']
+missing_apis = [api for api in essential_apis if api not in available_apis]
+
+if missing_apis:
+    print(f'⚠️  Missing essential APIs: {missing_apis}')
+    print('Note: System will use fallback options')
+else:
+    print('🎉 All essential APIs are available!')
+        "
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: |
+          logs/
+          assets/generated/shorts/
+        retention-days: 2
