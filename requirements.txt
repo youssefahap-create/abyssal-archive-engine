@@ -1,0 +1,52 @@
+# Python Packages for YouTube Auto Channel
+# ========================================
+
+# الأساسية
+wheel>=0.38.0
+setuptools>=65.0.0
+
+# معالجة الصور والفيديو
+Pillow>=10.0.0
+opencv-python>=4.8.0
+moviepy>=1.0.3
+numpy>=1.24.0
+scikit-image>=0.20.0
+
+# معالجة الصوت
+pydub>=0.25.1
+gTTS>=2.3.2
+pyttsx3>=2.90
+SpeechRecognition>=3.10.0
+
+# واجهات برمجة التطبيقات للذكاء الاصطناعي
+openai>=1.3.0
+google-generativeai>=0.3.0
+replicate>=0.11.0
+requests>=2.31.0
+
+# قاعدة البيانات
+sqlite3
+
+# الجدولة
+schedule>=1.2.0
+
+# اليوتيوب API
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=1.0.0
+
+# الأدوات المساعدة
+python-dotenv>=1.0.0
+python-dateutil>=2.8.2
+pytz>=2023.3
+colorama>=0.4.6
+tqdm>=4.65.0
+
+# التطوير
+pytest>=7.4.0
+black>=23.9.0
+flake8>=6.1.0
+
+# اختيارية (لتحسين الأداء)
+ujson>=5.8.0
+psutil>=5.9.0
