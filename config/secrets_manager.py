@@ -1,191 +1,81 @@
 import os
-import json
-from typing import Dict, Any
-from dataclasses import dataclass
-
-@dataclass
-class APIConfig:
-    """تخزين إعدادات API"""
-    name: str
-    key_names: list
-    current_key_index: int = 0
-    keys: list = None
-    
-    def __post_init__(self):
-        if self.keys is None:
-            self.keys = []
-            self.load_keys()
-    
-    def load_keys(self):
-        """تحميل المفاتيح من متغيرات البيئة"""
-        for key_name in self.key_names:
-            key_value = os.getenv(key_name)
-            if key_value:
-                self.keys.append(key_value)
-    
-    def get_key(self):
-        """الحصول على المفتاح التالي (Round Robin)"""
-        if not self.keys:
-            return None
-        
-        key = self.keys[self.current_key_index]
-        self.current_key_index = (self.current_key_index + 1) % len(self.keys)
-        return key
-    
-    def has_keys(self):
-        """التحقق من وجود مفاتيح"""
-        return len(self.keys) > 0
+from typing import Dict, Optional
 
 class SecretsManager:
-    """مدير مركزي لجميع مفاتيح API"""
-    
     def __init__(self):
-        self.apis: Dict[str, APIConfig] = {}
-        self._init_apis()
+        self.secrets = {
+            # TTS APIs
+            "ELEVEN_API_KEY_1": os.getenv("ELEVEN_API_KEY_1"),
+            "ELEVEN_API_KEY_2": os.getenv("ELEVEN_API_KEY_2"),
+            "ELEVEN_API_KEY_3": os.getenv("ELEVEN_API_KEY_3"),
+            "GROQ_API_KEY": os.getenv("GROQ_API_KEY"),
+            
+            # AI Content APIs
+            "GEMINI_API_KEY_1": os.getenv("GEMINI_API_KEY_1"),
+            "GEMINI_API_KEY_2": os.getenv("GEMINI_API_KEY_2"),
+            "OPENAI_API_KEY_1": os.getenv("OPENAI_API_KEY_1"),
+            "OPENAI_API_KEY_2": os.getenv("OPENAI_API_KEY_2"),
+            
+            # Image APIs
+            "GETIMG_API_KEY_1": os.getenv("GETIMG_API_KEY_1"),
+            "GETIMG_API_KEY_2": os.getenv("GETIMG_API_KEY_2"),
+            "PEXELS_API_KEY": os.getenv("PEXELS_API_KEY"),
+            "PIXABAY_API_KEY": os.getenv("PIXABAY_API_KEY"),
+            "UNSPLASH_ACCESS_KEY": os.getenv("UNSPLASH_ACCESS_KEY"),
+            
+            # Video APIs
+            "COVERR_API_KEY": os.getenv("COVERR_API_KEY"),
+            
+            # YouTube APIs
+            "YOUTUBE_API_KEY": os.getenv("YOUTUBE_API_KEY"),
+            "YT_REFRESH_TOKEN_1": os.getenv("YT_REFRESH_TOKEN_1"),
+            "YT_REFRESH_TOKEN_2": os.getenv("YT_REFRESH_TOKEN_2"),
+            
+            # Misc APIs
+            "TAVILY_API_KEY": os.getenv("TAVILY_API_KEY"),
+            "REPLICATE_API_TOKEN_1": os.getenv("REPLICATE_API_TOKEN_1"),
+            "REPLICATE_API_TOKEN_2": os.getenv("REPLICATE_API_TOKEN_2"),
+            "NEWS_API": os.getenv("NEWS_API"),
+            "CAMBAI_KEY": os.getenv("CAMBAI_KEY")
+        }
+        
+        self.active_keys = {}
+        self.failed_keys = set()
     
-    def _init_apis(self):
-        """تهيئة جميع واجهات برمجة التطبيقات"""
+    def get_key(self, service: str, key_type: str) -> Optional[str]:
+        """الحصول على مفتاح مع نظام fallback"""
+        key_patterns = {
+            "elevenlabs": ["ELEVEN_API_KEY_1", "ELEVEN_API_KEY_2", "ELEVEN_API_KEY_3"],
+            "gemini": ["GEMINI_API_KEY_1", "GEMINI_API_KEY_2"],
+            "openai": ["OPENAI_API_KEY_1", "OPENAI_API_KEY_2"],
+            "getimg": ["GETIMG_API_KEY_1", "GETIMG_API_KEY_2"],
+            "youtube": ["YOUTUBE_API_KEY"],
+            "tts": ["ELEVEN_API_KEY_1", "GROQ_API_KEY"]
+        }
         
-        # الصوتيات
-        self.apis["elevenlabs"] = APIConfig(
-            name="elevenlabs",
-            key_names=["ELEVEN_API_KEY_1", "ELEVEN_API_KEY_2", "ELEVEN_API_KEY_3"]
-        )
-        
-        self.apis["groq"] = APIConfig(
-            name="groq",
-            key_names=["GROQ_API_KEY"]
-        )
-        
-        self.apis["openai"] = APIConfig(
-            name="openai",
-            key_names=["OPENAI_API_KEY_1", "OPENAI_API_KEY_2"]
-        )
-        
-        self.apis["openrouter"] = APIConfig(
-            name="openrouter",
-            key_names=["OPENROUTER_KEY"]
-        )
-        
-        # الصور
-        self.apis["getimg"] = APIConfig(
-            name="getimg",
-            key_names=["GETIMG_API_KEY_1", "GETIMG_API_KEY_2"]
-        )
-        
-        self.apis["replicate"] = APIConfig(
-            name="replicate",
-            key_names=["REPLICATE_API_TOKEN_1", "REPLICATE_API_TOKEN_2"]
-        )
-        
-        self.apis["stable_diffusion"] = APIConfig(
-            name="stable_diffusion",
-            key_names=["HF_API_TOKEN_1"]
-        )
-        
-        # توليد المحتوى
-        self.apis["gemini"] = APIConfig(
-            name="gemini",
-            key_names=["GEMINI_API_KEY_1", "GEMINI_API_KEY_2"]
-        )
-        
-        self.apis["claude"] = APIConfig(
-            name="claude",
-            key_names=["OPENROUTER_KEY"]  # يمكن استخدام OpenRouter للوصول إلى Claude
-        )
-        
-        # البحث عن الصور
-        self.apis["pexels"] = APIConfig(
-            name="pexels",
-            key_names=["PEXELS_API_KEY"]
-        )
-        
-        self.apis["pixabay"] = APIConfig(
-            name="pixabay",
-            key_names=["PIXABAY_API_KEY"]
-        )
-        
-        self.apis["unsplash"] = APIConfig(
-            name="unsplash",
-            key_names=["UNSPLASH_ACCESS_KEY", "UNSPLASH_SECRET_KEY"]
-        )
-        
-        # خدمات أخرى
-        self.apis["youtube"] = APIConfig(
-            name="youtube",
-            key_names=["YOUTUBE_API_KEY"]
-        )
-        
-        self.apis["telegram"] = APIConfig(
-            name="telegram",
-            key_names=["TELEGRAM_BOT_TOKEN"]
-        )
-        
-        self.apis["tavily"] = APIConfig(
-            name="tavily",
-            key_names=["TAVILY_API_KEY"]
-        )
-        
-        self.apis["newsapi"] = APIConfig(
-            name="newsapi",
-            key_names=["NEWS_API"]
-        )
-        
-        self.apis["nasa"] = APIConfig(
-            name="nasa",
-            key_names=["NASA_API_KEY"]
-        )
-        
-        self.apis["noaa"] = APIConfig(
-            name="noaa",
-            key_names=["NOAA_API_KEY"]
-        )
-    
-    def get_api_key(self, api_name: str) -> str:
-        """الحصول على مفتاح API"""
-        if api_name not in self.apis:
+        if service not in key_patterns:
             return None
+            
+        for key_name in key_patterns[service]:
+            if key_name in self.failed_keys:
+                continue
+                
+            key = self.secrets.get(key_name)
+            if key and key.strip():
+                self.active_keys[service] = key_name
+                return key
         
-        api_config = self.apis[api_name]
-        if not api_config.has_keys():
-            return None
-        
-        return api_config.get_key()
+        return None
     
-    def get_all_keys(self, api_name: str) -> list:
-        """الحصول على جميع مفاتيح API"""
-        if api_name not in self.apis:
-            return []
-        
-        return self.apis[api_name].keys
+    def mark_failed(self, key_name: str):
+        """تحديد مفتاح فاشل"""
+        self.failed_keys.add(key_name)
+        # إزالة من المفاتيح النشطة
+        for service, active_key in list(self.active_keys.items()):
+            if active_key == key_name:
+                del self.active_keys[service]
     
-    def has_api(self, api_name: str) -> bool:
-        """التحقق من توفر API"""
-        if api_name not in self.apis:
-            return False
-        
-        return self.apis[api_name].has_keys()
-    
-    def get_available_apis(self, category: str = None) -> list:
-        """الحصول على واجهات برمجة التطبيقات المتاحة"""
-        available = []
-        for api_name, api_config in self.apis.items():
-            if api_config.has_keys():
-                available.append(api_name)
-        
-        if category:
-            # يمكن تصفية حسب الفئة إذا لزم الأمر
-            pass
-        
-        return available
-    
-    def get_api_status(self) -> Dict[str, bool]:
-        """الحصول على حالة جميع واجهات برمجة التطبيقات"""
-        status = {}
-        for api_name, api_config in self.apis.items():
-            status[api_name] = api_config.has_keys()
-        
-        return status
-
-# إنشاء نسخة عامة
-secrets_manager = SecretsManager()
+    def get_all_active(self) -> Dict:
+        """الحصول على جميع المفاتيح النشطة"""
+        return {service: self.secrets[key] 
+                for service, key in self.active_keys.items()}
