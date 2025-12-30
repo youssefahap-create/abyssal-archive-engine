@@ -1,52 +1,44 @@
-# Python Packages for YouTube Auto Channel
-# ========================================
-
-# الأساسية
-wheel>=0.38.0
-setuptools>=65.0.0
-
-# معالجة الصور والفيديو
+# الأساسيات
+python-dotenv>=1.0.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+schedule>=1.2.0
 Pillow>=10.0.0
-opencv-python>=4.8.0
-moviepy>=1.0.3
-numpy>=1.24.0
-scikit-image>=0.20.0
+python-dateutil>=2.8.0
 
 # معالجة الصوت
-pydub>=0.25.1
-gTTS>=2.3.2
+gTTS>=2.3.0
 pyttsx3>=2.90
+pydub>=0.25.1
 SpeechRecognition>=3.10.0
 
-# واجهات برمجة التطبيقات للذكاء الاصطناعي
-openai>=1.3.0
-google-generativeai>=0.3.0
-replicate>=0.11.0
-requests>=2.31.0
+# معالجة الفيديو
+moviepy>=1.0.3
+opencv-python>=4.8.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9
 
-# قاعدة البيانات
-sqlite3
-
-# الجدولة
-schedule>=1.2.0
-
-# اليوتيوب API
+# APIs
 google-api-python-client>=2.100.0
 google-auth-httplib2>=0.1.0
 google-auth-oauthlib>=1.0.0
+elevenlabs>=0.2.0
+openai>=0.28.0
+google-generativeai>=0.3.0
 
-# الأدوات المساعدة
-python-dotenv>=1.0.0
-python-dateutil>=2.8.2
-pytz>=2023.3
-colorama>=0.4.6
-tqdm>=4.65.0
+# تحسين الأداء
+aiohttp>=3.9.0
+asyncio>=3.4.0
+numpy>=1.24.0
 
-# التطوير
-pytest>=7.4.0
-black>=23.9.0
-flake8>=6.1.0
-
-# اختيارية (لتحسين الأداء)
+# أدوات مساعدة
+colorama>=0.4.0
+tqdm>=4.66.0
+pyyaml>=6.0
 ujson>=5.8.0
-psutil>=5.9.0
+
+# تطوير
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
