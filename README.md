@@ -1,17 +1,31 @@
-# YouTube Auto Channel System
+# YouTube Automated Quiz Channel
 
-نظام تلقائي بالكامل لإدارة قناة يوتيوب تقدم محتوى يومي من الألغاز والأسئلة.
+A fully automated YouTube channel that generates and uploads quiz shorts daily using GitHub Actions.
 
-## 🎯 المميزات
+## Features
 
-- ✅ **تلقائي بالكامل**: يعمل 24/7 بدون تدخل بشري
-- 📱 **4 شورتات يومياً**: في أوقات ذروة المشاهدة العالمية
-- 🎬 **فيديو تجميعي**: يجمع الشورتات الأربعة في فيديو واحد
-- 🧠 **محتوى ذكي**: أسئلة وألغاز متنوعة باستخدام الذكاء الاصطناعي
-- 🔊 **نظام صوت متعدد**: مع Fallback للخدمات المختلفة
-- 🖼️ **توليد صور ذكي**: مع Fallback للبحث والصور المحلية
-- 📊 **تحسين SEO**: عناوين وأوصاف وهاشتاجات محسنة
-- 🔄 **نظام Fallback**: لكل شيء (صوت، صور، محتوى)
-- 💾 **لا تخزين سحابي**: كل شيء يعمل محلياً
+- ✅ 100% automated - no human intervention required
+- ✅ Generates 4 YouTube Shorts daily
+- ✅ Creates 1 compilation video daily
+- ✅ Uses trending topics for content
+- ✅ Multiple fallback providers for reliability
+- ✅ SEO optimized metadata
+- ✅ Works with computer off (GitHub Actions)
+- ✅ No cloud storage required
 
-## 📁 هيكل المشروع
+## How It Works
+
+1. **Trend Gathering**: Fetches trending topics from Reddit, Google Trends, NewsAPI
+2. **Content Generation**: Converts trends into quiz questions
+3. **Media Creation**: Generates images, audio, and videos
+4. **SEO Optimization**: Creates titles, descriptions, tags
+5. **YouTube Upload**: Automatically uploads to YouTube channel
+6. **Scheduling**: Runs daily via GitHub Actions cron jobs
+
+## Setup Instructions
+
+### 1. Repository Setup
+
+```bash
+git clone <this-repo>
+cd youtube-automated-channel
