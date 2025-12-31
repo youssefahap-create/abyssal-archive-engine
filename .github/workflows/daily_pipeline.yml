@@ -1,219 +1,94 @@
-name: Daily YouTube Automation
-
+name: Automated YouTube Channel Pipeline
 on:
   schedule:
-    # تشغيل كل يوم في الساعة 07:00 UTC (قبل ساعة من أول شورت)
-    - cron: '0 7 * * *'
-  workflow_dispatch:  # للتشغيل اليدوي
-    inputs:
-      test_mode:
-        description: 'Run in test mode?'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-        - 'true'
-        - 'false'
+    - cron: '0 12,15,18,21 * * *'  # أوقات النشر: 12, 3, 6, 9 مساءً UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   generate-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # 3 ساعات كحد أقصى
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: Set up Python
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-
+    
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg libsm6 libxext6 libgl1-mesa-glx
-
+        sudo apt-get install -y ffmpeg imagemagick libmagickwand-dev
+        sudo apt-get install -y xvfb libfontconfig1 libfreetype6
+    
     - name: Install Python dependencies
       run: |
-        pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install -r requirements.txt
-
-    - name: Create environment file from secrets
-      env:
-        ALL_SECRETS: ${{ toJson(secrets) }}
-      run: |
-        # إنشاء ملف .env من جميع Secrets
-        echo "# Auto-generated from GitHub Secrets" > .env
-        echo "# Generated on $(date)" >> .env
-        echo "" >> .env
-        
-        # إضافة جميع الـ Secrets كمتغيرات بيئة
-        python3 -c "
-import json
-import os
-
-secrets = json.loads(os.environ['ALL_SECRETS'])
-with open('.env', 'a') as f:
-    for key, value in secrets.items():
-        if value:  # فقط إذا كانت القيمة ليست فارغة
-            f.write(f'{key}={value}\\n')
-        
-        # إضافة متغيرات النظام
-        f.write('''
-LOG_LEVEL=INFO
-TEST_MODE=${{ github.event.inputs.test_mode }}
-MAX_VIDEO_SIZE_MB=500
-CLEANUP_OLD_FILES_DAYS=7
-GITHUB_ACTIONS=true
-''')
-        "
-
-    - name: Create necessary directories
-      run: |
-        mkdir -p assets/backgrounds
-        mkdir -p assets/local_images
-        mkdir -p assets/local_audio
-        mkdir -p assets/generated/images
-        mkdir -p assets/generated/audio
-        mkdir -p assets/generated/videos
-        mkdir -p assets/generated/shorts
-        mkdir -p assets/uploads
-        mkdir -p database
-        mkdir -p logs
-        mkdir -p backups
-
-    - name: Generate default backgrounds
-      run: |
-        python3 -c "
-from PIL import Image, ImageDraw
-import os
-
-# ألوان خلفيات
-colors = [
-    (41, 128, 185),    # أزرق
-    (39, 174, 96),     # أخضر
-    (142, 68, 173),    # بنفسجي
-    (230, 126, 34),    # برتقالي
-    (231, 76, 60),     # أحمر
-    (52, 73, 94),      # رمادي داكن
-    (26, 188, 156),    # تركواز
-    (241, 196, 15),    # أصفر
-]
-
-os.makedirs('assets/backgrounds', exist_ok=True)
-
-for i, color in enumerate(colors):
-    img = Image.new('RGB', (1080, 1920), color)
-    draw = ImageDraw.Draw(img)
     
-    # إضافة نمط بسيط
-    for x in range(0, 1080, 100):
-        for y in range(0, 1920, 100):
-            if (x + y) % 200 == 0:
-                draw.rectangle([x, y, x+50, y+50], fill=(255, 255, 255, 50))
-    
-    img.save(f'assets/backgrounds/background_{i+1}.png')
-
-print(f'Created {len(colors)} default backgrounds')
-        "
-
-    - name: Create local questions file
-      run: |
-        python3 -c "
-import json
-
-questions = [
-    {
-        'question': 'What is the capital of France?',
-        'answer': 'Paris',
-        'category': 'general_knowledge',
-        'difficulty': 'easy',
-        'image_prompt': 'Eiffel Tower in Paris'
-    },
-    {
-        'question': 'How many continents are there?',
-        'answer': '7',
-        'category': 'general_knowledge',
-        'difficulty': 'easy',
-        'image_prompt': 'World map with continents'
-    },
-    {
-        'question': 'What is the largest planet in our solar system?',
-        'answer': 'Jupiter',
-        'category': 'general_knowledge',
-        'difficulty': 'medium',
-        'image_prompt': 'Jupiter planet in space'
-    },
-    {
-        'question': 'Which country has a flag with a red circle on white background?',
-        'answer': 'Japan',
-        'category': 'flags',
-        'difficulty': 'easy',
-        'image_prompt': 'Japanese flag with red circle'
-    },
-    {
-        'question': 'What animal is known as the King of the Jungle?',
-        'answer': 'Lion',
-        'category': 'animals',
-        'difficulty': 'easy',
-        'image_prompt': 'Lion in the jungle'
-    }
-]
-
-os.makedirs('assets', exist_ok=True)
-with open('assets/local_questions.json', 'w', encoding='utf-8') as f:
-    json.dump(questions, f, indent=2, ensure_ascii=False)
-print(f'Created {len(questions)} local questions')
-        "
-
-    - name: Test system components
-      run: |
-        python main.py --test-all
-
-    - name: Run daily pipeline
+    - name: Generate daily content
       env:
-        TEST_MODE: ${{ github.event.inputs.test_mode }}
-      run: |
-        if [ "$TEST_MODE" = "true" ]; then
-          echo "Running in TEST MODE"
-          python main.py --test --run-once
-        else
-          echo "Running in PRODUCTION MODE"
-          python main.py --run-once
-        fi
-
-    - name: Upload logs as artifact
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: daily-logs
-        path: logs/
-        retention-days: 7
-
-    - name: Upload generated videos
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: generated-videos
-        path: |
-          assets/generated/shorts/
-          assets/generated/videos/
-        retention-days: 3
-
-    - name: Send Telegram notification
-      if: always() && secrets.TELEGRAM_BOT_TOKEN != ''
-      env:
+        # جميع API keys
+        ELEVEN_API_KEY_1: ${{ secrets.ELEVEN_API_KEY_1 }}
+        ELEVEN_API_KEY_2: ${{ secrets.ELEVEN_API_KEY_2 }}
+        ELEVEN_API_KEY_3: ${{ secrets.ELEVEN_API_KEY_3 }}
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        OPENAI_API_KEY_1: ${{ secrets.OPENAI_API_KEY_1 }}
+        OPENAI_API_KEY_2: ${{ secrets.OPENAI_API_KEY_2 }}
+        PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+        UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+        UNSPLASH_SECRET_KEY: ${{ secrets.UNSPLASH_SECRET_KEY }}
+        UNSPLASH_ID: ${{ secrets.UNSPLASH_ID }}
+        YT_CLIENT_ID_1: ${{ secrets.YT_CLIENT_ID_1 }}
+        YT_CLIENT_SECRET_1: ${{ secrets.YT_CLIENT_SECRET_1 }}
+        YT_REFRESH_TOKEN_1: ${{ secrets.YT_REFRESH_TOKEN_1 }}
+        YT_CLIENT_ID_2: ${{ secrets.YT_CLIENT_ID_2 }}
+        YT_CLIENT_SECRET_2: ${{ secrets.YT_CLIENT_SECRET_2 }}
+        YT_REFRESH_TOKEN_2: ${{ secrets.YT_REFRESH_TOKEN_2 }}
+        YT_CHANNEL_ID: ${{ secrets.YT_CHANNEL_ID }}
+        GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+        GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+        NEWS_API: ${{ secrets.NEWS_API }}
+        TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+        CAMB_AI_KEY_1: ${{ secrets.CAMB_AI_KEY_1 }}
+        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+        COVERR_API_ID: ${{ secrets.COVERR_API_ID }}
+        COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+        FREEPIK_API_KEY: ${{ secrets.FREEPIK_API_KEY }}
+        FREESOUND_API: ${{ secrets.FREESOUND_API }}
+        FREESOUND_ID: ${{ secrets.FREESOUND_ID }}
+        GETIMG_API_KEY_1: ${{ secrets.GETIMG_API_KEY_1 }}
+        GETIMG_API_KEY_2: ${{ secrets.GETIMG_API_KEY_2 }}
+        HF_API_TOKEN_1: ${{ secrets.HF_API_TOKEN_1 }}
+        INTERNET_ARCHIVE_ACCESS_KEY: ${{ secrets.INTERNET_ARCHIVE_ACCESS_KEY }}
+        INTERNET_ARCHIVE_SECRET_KEY: ${{ secrets.INTERNET_ARCHIVE_SECRET_KEY }}
+        NASA_API_KEY: ${{ secrets.NASA_API_KEY }}
+        NOAA_API_KEY: ${{ secrets.NOAA_API_KEY }}
+        OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
+        REMOVE_BG_API: ${{ secrets.REMOVE_BG_API }}
+        REPLICATE_API_TOKEN_1: ${{ secrets.REPLICATE_API_TOKEN_1 }}
+        REPLICATE_API_TOKEN_2: ${{ secrets.REPLICATE_API_TOKEN_2 }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        VECTEEZY_API_KEY: ${{ secrets.VECTEEZY_API_KEY }}
+        VECTEEZY_ID_KEY: ${{ secrets.VECTEEZY_ID_KEY }}
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       run: |
-        if [ -f "logs/background.log" ]; then
-          LAST_LINES=$(tail -3 logs/background.log)
-          STATUS="$1"
-          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-          -d chat_id="$TELEGRAM_CHAT_ID" \
-          -d text="YouTube Auto Pipeline $STATUS
-          
-          Last logs:
-          $LAST_LINES"
-        fi
+        python main.py
+    
+    - name: Commit and push generated content
+      run: |
+        git config --local user.email "github-actions@github.com"
+        git config --local user.name "GitHub Actions"
+        git add storage/
+        git add logs/
+        git commit -m "Auto-generated content for $(date +'%Y-%m-%d')" || echo "No changes to commit"
+        git push
