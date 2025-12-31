@@ -1,135 +1,104 @@
 import os
-import json
-from typing import Dict, Optional, List
-from datetime import datetime, timedelta
+import time
 from pathlib import Path
-
+from typing import Optional, Dict, List
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-from config.settings import YOUTUBE_SETTINGS, SCHEDULE_SETTINGS
-from config.secrets_manager import secrets_manager
-from utils.logger import logger
-from services.seo_optimizer import SEOOptimizer
-
+from config import config
+from core.logger import logger
 
 class YouTubeUploader:
-    """فئة رفع الفيديوهات إلى يوتيوب"""
-    
-    SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
-    
     def __init__(self):
-        self.seo_optimizer = SEOOptimizer()
-        self.credentials = None
         self.service = None
         self._authenticate()
     
     def _authenticate(self):
-        """المصادقة مع YouTube API"""
+        """Authenticate with YouTube API"""
         try:
-            # استخدام Refresh Token إذا كان متوفراً
-            refresh_token = secrets_manager.get_api_key("youtube_refresh")
+            # Try first set of credentials
+            credentials = Credentials(
+                token=None,
+                refresh_token=os.getenv("YT_REFRESH_TOKEN_1"),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=os.getenv("YT_CLIENT_ID_1"),
+                client_secret=os.getenv("YT_CLIENT_SECRET_1")
+            )
             
-            if refresh_token:
-                # هناك طريقة للحصول على Credentials من Refresh Token
-                # لكننا سنستخدم الطريقة القياسية مع ملف client_secret
-                pass
+            if credentials.expired:
+                credentials.refresh(Request())
             
-            # المحاولة باستخدام OAuth 2.0
-            creds = None
-            token_file = "token.json"
-            
-            if os.path.exists(token_file):
-                creds = Credentials.from_authorized_user_file(token_file, self.SCOPES)
-            
-            # إذا لم توجد بيانات اعتماد صالحة
-            if not creds or not creds.valid:
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                else:
-                    # محاولة استخدام Client ID و Secret
-                    client_id = secrets_manager.get_api_key("youtube_client_id")
-                    client_secret = secrets_manager.get_api_key("youtube_client_secret")
-                    
-                    if client_id and client_secret:
-                        # إنشاء Flow
-                        flow = InstalledAppFlow.from_client_config(
-                            {
-                                "web": {
-                                    "client_id": client_id,
-                                    "client_secret": client_secret,
-                                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                                    "token_uri": "https://oauth2.googleapis.com/token"
-                                }
-                            },
-                            self.SCOPES
-                        )
-                        
-                        # الحصول على Credentials
-                        creds = flow.run_local_server(port=0)
-                    
-                    else:
-                        logger.error("YouTube authentication failed: No credentials available")
-                        return
-                
-                # حفظ Credentials للمرة القادمة
-                with open(token_file, 'w') as token:
-                    token.write(creds.to_json())
-            
-            self.credentials = creds
-            self.service = build('youtube', 'v3', credentials=creds)
-            logger.info("YouTube authentication successful")
+            self.service = build('youtube', 'v3', credentials=credentials)
+            logger.info("YouTube authentication successful with first token")
             
         except Exception as e:
-            logger.error(f"YouTube authentication failed: {e}")
+            logger.warning(f"First YouTube token failed: {str(e)}")
+            
+            # Try second set of credentials
+            try:
+                credentials = Credentials(
+                    token=None,
+                    refresh_token=os.getenv("YT_REFRESH_TOKEN_2"),
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=os.getenv("YT_CLIENT_ID_2"),
+                    client_secret=os.getenv("YT_CLIENT_SECRET_2")
+                )
+                
+                if credentials.expired:
+                    credentials.refresh(Request())
+                
+                self.service = build('youtube', 'v3', credentials=credentials)
+                logger.info("YouTube authentication successful with second token")
+                
+            except Exception as e2:
+                logger.error(f"All YouTube authentication failed: {str(e2)}")
+                self.service = None
     
-    def upload_short(self, video_path: str, question_data: dict, 
-                    schedule_time: datetime = None) -> Optional[str]:
-        """رفع فيديو شورت إلى يوتيوب"""
+    def upload_short(self, video_path: Path, metadata: Dict) -> Optional[str]:
+        """Upload a Short video to YouTube"""
         
         if not self.service:
-            logger.error("YouTube service not initialized")
+            logger.error("YouTube service not authenticated")
             return None
         
         try:
-            # تحسين SEO
-            title = self.seo_optimizer.generate_title(question_data)
-            description = self.seo_optimizer.generate_description(question_data)
-            tags = self.seo_optimizer.generate_tags(question_data)
+            # Prepare metadata
+            title = metadata.get("title", "Daily Quiz Challenge")
+            description = metadata.get("description", "Test your knowledge! Write your answer in the comments below.")
+            tags = metadata.get("tags", ["quiz", "challenge", "trivia", "test", "knowledge"])
             
-            # إعداد بيانات الفيديو
+            # YouTube Shorts requirements
             body = {
                 'snippet': {
                     'title': title,
                     'description': description,
                     'tags': tags,
-                    'categoryId': YOUTUBE_SETTINGS["category_id"],
-                    'defaultLanguage': YOUTUBE_SETTINGS["default_language"]
+                    'categoryId': config.YOUTUBE_CATEGORY_ID
                 },
                 'status': {
-                    'privacyStatus': YOUTUBE_SETTINGS["privacy_status"],
+                    'privacyStatus': config.YOUTUBE_PRIVACY_STATUS,
                     'selfDeclaredMadeForKids': False
                 }
             }
             
-            # إذا كان هناك وقت جدولة
-            if schedule_time:
-                # تحويل إلى تنسيق RFC 3339
-                scheduled_time_rfc3339 = schedule_time.isoformat() + 'Z'
-                body['status']['publishAt'] = scheduled_time_rfc3339
-            
-            # رفع الفيديو
-            media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+            # Upload video
+            media = MediaFileUpload(
+                str(video_path),
+                chunksize=1024*1024,
+                resumable=True,
+                mimetype='video/mp4'
+            )
             
             request = self.service.videos().insert(
-                part=','.join(body.keys()),
+                part="snippet,status",
                 body=body,
                 media_body=media
             )
             
+            # Execute upload
             response = None
             while response is None:
                 status, response = request.next_chunk()
@@ -137,228 +106,151 @@ class YouTubeUploader:
                     logger.info(f"Upload progress: {int(status.progress() * 100)}%")
             
             video_id = response['id']
-            logger.info(f"Video uploaded successfully: {video_id}")
+            logger.info(f"Successfully uploaded Short: {video_id}")
             
-            # حفظ معلومات الرفع
-            self._save_upload_info(video_id, video_path, question_data, title)
+            # Add to playlist if exists
+            self._add_to_playlist(video_id)
             
             return video_id
             
         except Exception as e:
-            logger.error(f"Error uploading video: {e}")
+            logger.error(f"Failed to upload Short: {str(e)}")
             return None
     
-    def upload_compilation(self, video_path: str, shorts_data: List[dict],
-                          schedule_time: datetime = None) -> Optional[str]:
-        """رفع فيديو تجميعي"""
+    def upload_compilation(self, video_path: Path, metadata: Dict) -> Optional[str]:
+        """Upload a compilation video to YouTube"""
         
         if not self.service:
-            logger.error("YouTube service not initialized")
+            logger.error("YouTube service not authenticated")
             return None
         
         try:
-            # إنشاء عنوان ووصف للتجميع
-            today = datetime.now().strftime("%B %d, %Y")
-            title = f"Daily Brain Teasers Compilation - {today} | Test Your Knowledge!"
+            # Prepare metadata for compilation
+            title = metadata.get("title", "Daily Quiz Compilation")
+            description = metadata.get("description", "Today's quiz challenges compilation. Watch all shorts in one video!")
+            tags = metadata.get("tags", ["compilation", "quiz", "challenge", "daily", "shorts"])
             
-            # إنشاء وصف التجميع
-            description = f"🎯 Daily Brain Teasers Compilation - {today}\n\n"
-            description += "Can you solve all these puzzles? Test your knowledge with today's compilation!\n\n"
-            
-            for i, data in enumerate(shorts_data, 1):
-                description += f"{i}. {data.get('question', '')}\n"
-            
-            description += "\n🔔 Subscribe for daily brain teasers!\n"
-            description += "💬 Comment your score below!\n\n"
-            description += "#brainteaser #quiz #compilation #dailyquiz #trivia"
-            
-            # إعداد بيانات الفيديو
             body = {
                 'snippet': {
                     'title': title,
                     'description': description,
-                    'tags': ['compilation', 'brainteaser', 'quiz', 'daily', 'trivia', 
-                            'puzzle', 'knowledge', 'test', 'challenge'],
-                    'categoryId': YOUTUBE_SETTINGS["category_id"],
-                    'defaultLanguage': YOUTUBE_SETTINGS["default_language"]
+                    'tags': tags,
+                    'categoryId': config.YOUTUBE_CATEGORY_ID
                 },
                 'status': {
-                    'privacyStatus': YOUTUBE_SETTINGS["privacy_status"],
+                    'privacyStatus': config.YOUTUBE_PRIVACY_STATUS,
                     'selfDeclaredMadeForKids': False
                 }
             }
             
-            # إذا كان هناك وقت جدولة
-            if schedule_time:
-                scheduled_time_rfc3339 = schedule_time.isoformat() + 'Z'
-                body['status']['publishAt'] = scheduled_time_rfc3339
-            
-            # رفع الفيديو
-            media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+            # Upload video
+            media = MediaFileUpload(
+                str(video_path),
+                chunksize=1024*1024,
+                resumable=True,
+                mimetype='video/mp4'
+            )
             
             request = self.service.videos().insert(
-                part=','.join(body.keys()),
+                part="snippet,status",
                 body=body,
                 media_body=media
             )
             
+            # Execute upload
             response = None
             while response is None:
                 status, response = request.next_chunk()
                 if status:
-                    logger.info(f"Compilation upload progress: {int(status.progress() * 100)}%")
+                    logger.info(f"Upload progress: {int(status.progress() * 100)}%")
             
             video_id = response['id']
-            logger.info(f"Compilation uploaded successfully: {video_id}")
+            logger.info(f"Successfully uploaded compilation: {video_id}")
             
             return video_id
             
         except Exception as e:
-            logger.error(f"Error uploading compilation: {e}")
+            logger.error(f"Failed to upload compilation: {str(e)}")
             return None
     
-    def _save_upload_info(self, video_id: str, video_path: str, 
-                         question_data: dict, title: str):
-        """حفظ معلومات الرفع"""
-        
-        uploads_dir = Path("assets/uploads")
-        uploads_dir.mkdir(exist_ok=True)
-        
-        info_file = uploads_dir / f"upload_{video_id}.json"
-        info = {
-            "video_id": video_id,
-            "video_path": video_path,
-            "question": question_data["question"],
-            "answer": question_data["answer"],
-            "category": question_data.get("category", "general"),
-            "title": title,
-            "uploaded_at": datetime.now().isoformat(),
-            "scheduled": False
-        }
-        
-        with open(info_file, 'w', encoding='utf-8') as f:
-            json.dump(info, f, indent=2, ensure_ascii=False)
-    
-    def check_upload_status(self, video_id: str) -> Dict:
-        """التحقق من حالة الفيديو"""
-        
-        if not self.service:
-            return {"error": "Service not initialized"}
-        
+    def _add_to_playlist(self, video_id: str):
+        """Add video to playlist"""
         try:
-            request = self.service.videos().list(
-                part="status,snippet,statistics",
-                id=video_id
-            )
-            response = request.execute()
+            playlist_id = self._get_or_create_playlist("Daily Quiz Shorts")
             
-            if response['items']:
-                video = response['items'][0]
-                return {
-                    "status": video['status']['uploadStatus'],
-                    "privacy": video['status']['privacyStatus'],
-                    "title": video['snippet']['title'],
-                    "view_count": video['statistics'].get('viewCount', 0),
-                    "like_count": video['statistics'].get('likeCount', 0),
-                    "comment_count": video['statistics'].get('commentCount', 0)
-                }
-            
-            return {"error": "Video not found"}
-            
+            if playlist_id:
+                self.service.playlistItems().insert(
+                    part="snippet",
+                    body={
+                        "snippet": {
+                            "playlistId": playlist_id,
+                            "resourceId": {
+                                "kind": "youtube#video",
+                                "videoId": video_id
+                            }
+                        }
+                    }
+                ).execute()
+                
+                logger.info(f"Added video {video_id} to playlist")
+        
         except Exception as e:
-            return {"error": str(e)}
+            logger.warning(f"Failed to add to playlist: {str(e)}")
     
-    def update_video_details(self, video_id: str, updates: Dict) -> bool:
-        """تحديث تفاصيل الفيديو"""
-        
-        if not self.service:
-            return False
-        
+    def _get_or_create_playlist(self, title: str) -> Optional[str]:
+        """Get or create a playlist"""
         try:
-            # الحصول على الفيديو الحالي أولاً
-            request = self.service.videos().list(
+            # Search for existing playlist
+            response = self.service.playlists().list(
                 part="snippet",
-                id=video_id
-            )
-            response = request.execute()
+                mine=True,
+                maxResults=50
+            ).execute()
             
-            if not response['items']:
-                return False
+            for playlist in response.get('items', []):
+                if playlist['snippet']['title'] == title:
+                    return playlist['id']
             
-            video = response['items'][0]
-            snippet = video['snippet']
-            
-            # تحديث الحقول المطلوبة
-            if 'title' in updates:
-                snippet['title'] = updates['title']
-            if 'description' in updates:
-                snippet['description'] = updates['description']
-            if 'tags' in updates:
-                snippet['tags'] = updates['tags']
-            if 'category_id' in updates:
-                snippet['categoryId'] = updates['category_id']
-            
-            # تحديث الفيديو
-            update_request = self.service.videos().update(
-                part="snippet",
+            # Create new playlist
+            response = self.service.playlists().insert(
+                part="snippet,status",
                 body={
-                    "id": video_id,
-                    "snippet": snippet
+                    "snippet": {
+                        "title": title,
+                        "description": "Daily quiz shorts compilation"
+                    },
+                    "status": {
+                        "privacyStatus": "public"
+                    }
                 }
-            )
-            update_request.execute()
+            ).execute()
             
-            logger.info(f"Video {video_id} updated successfully")
-            return True
-            
+            return response['id']
+        
         except Exception as e:
-            logger.error(f"Error updating video {video_id}: {e}")
-            return False
+            logger.error(f"Failed to create playlist: {str(e)}")
+            return None
     
-    def delete_video(self, video_id: str) -> bool:
-        """حذف فيديو"""
+    def update_daily(self, shorts_metadata: List[Dict], compilation_metadata: Dict):
+        """Upload all daily content"""
         
         if not self.service:
-            return False
+            logger.error("Cannot upload - not authenticated")
+            return
         
-        try:
-            request = self.service.videos().delete(id=video_id)
-            request.execute()
-            
-            logger.info(f"Video {video_id} deleted successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error deleting video {video_id}: {e}")
-            return False
-    
-    def get_channel_stats(self) -> Dict:
-        """الحصول على إحصائيات القناة"""
+        # Upload shorts
+        short_ids = []
+        for i, metadata in enumerate(shorts_metadata):
+            video_path = metadata.get("video_path")
+            if video_path and video_path.exists():
+                video_id = self.upload_short(video_path, metadata)
+                if video_id:
+                    short_ids.append(video_id)
+                    # Add delay between uploads
+                    if i < len(shorts_metadata) - 1:
+                        time.sleep(30)  # 30-second delay
         
-        if not self.service:
-            return {"error": "Service not initialized"}
-        
-        try:
-            channel_id = secrets_manager.get_api_key("youtube_channel_id")
-            if not channel_id:
-                return {"error": "Channel ID not configured"}
-            
-            request = self.service.channels().list(
-                part="statistics,snippet",
-                id=channel_id
-            )
-            response = request.execute()
-            
-            if response['items']:
-                channel = response['items'][0]
-                return {
-                    "title": channel['snippet']['title'],
-                    "subscribers": channel['statistics'].get('subscriberCount', '0'),
-                    "views": channel['statistics'].get('viewCount', '0'),
-                    "videos": channel['statistics'].get('videoCount', '0')
-                }
-            
-            return {"error": "Channel not found"}
-            
-        except Exception as e:
-            return {"error": str(e)}
+        # Upload compilation
+        compilation_path = compilation_metadata.get("video_path")
+        if compilation_path and compilation_path.exists():
+            self.upload_compilation(compilation_path, compilation_metadata)
